@@ -46,7 +46,7 @@ Não há Dockerfile. O processo empacotado é a API, no outro repositório.
 
 ## Deploy
 
-Pull request: `validate` e `plan`. Push em `homolog` e `main`: `apply` do mesmo estado remoto, então o segundo apply não cria outro cluster. Variáveis: `KEY_VAULT_NAME`, `FUNCTION_BACKEND_URL_HOMOLOG`, `FUNCTION_BACKEND_URL_PROD`, `API_BACKEND_URL_HOMOLOG`, `API_BACKEND_URL_PROD`, `ALERT_EMAIL`, `TFSTATE_RESOURCE_GROUP`, `TFSTATE_STORAGE_ACCOUNT`. Segredos OIDC: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`.
+Pull request: `validate` e `plan`. Push em `homolog` e `main`: `apply` do mesmo estado remoto, então o segundo apply não cria outro cluster. Sem os segredos OIDC e as variáveis de state, `plan` e `apply` avisam e seguem, em vez de falhar no login. Variáveis: `KEY_VAULT_NAME`, `FUNCTION_BACKEND_URL_HOMOLOG`, `FUNCTION_BACKEND_URL_PROD`, `API_BACKEND_URL_HOMOLOG`, `API_BACKEND_URL_PROD`, `ALERT_EMAIL`, `TFSTATE_RESOURCE_GROUP`, `TFSTATE_STORAGE_ACCOUNT`. Segredos OIDC: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`.
 
 O primeiro `apply` do banco nasce com `terraform init -backend=false` e cria a conta de state. Depois, `terraform init -migrate-state` com o resource group, a conta `sttfwb…` e o container `tfstate`. As chaves são `wrenchbox-db.tfstate`, `wrenchbox-k8s.tfstate` e `wrenchbox-functions.tfstate`.
 
