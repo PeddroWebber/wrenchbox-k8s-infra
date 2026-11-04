@@ -1,0 +1,67 @@
+<policies>
+  <inbound>
+    <base />
+    <rewrite-uri template="@{
+      var path = context.Request.OriginalUrl.Path;
+      var prefix = &quot;/${environment}&quot;;
+      if (!path.StartsWith(prefix)) { return path; }
+      var rest = path.Substring(prefix.Length);
+      return rest.Length == 0 ? &quot;/&quot; : rest;
+    }" copy-unmatched-params="true" />
+    <choose>
+      <when condition="@(context.Request.OriginalUrl.Path.Contains(&quot;/auth/token&quot;))">
+        <set-backend-service base-url="{{function-backend-${environment}}}" />
+      </when>
+      <when condition="@(context.Request.OriginalUrl.Path.Contains(&quot;/health&quot;) || context.Request.OriginalUrl.Path.Contains(&quot;/api/v1/auth/login&quot;) || context.Request.OriginalUrl.Path.Contains(&quot;/api/v1/tracking&quot;) || context.Request.OriginalUrl.Path.Contains(&quot;/api/v1/webhooks&quot;))">
+        <set-backend-service base-url="{{api-backend-${environment}}}" />
+      </when>
+      <when condition="@(context.Request.OriginalUrl.Path.Contains(&quot;/api/v1/me&quot;))">
+        <validate-jwt header-name="Authorization" require-scheme="Bearer" require-expiration-time="true">
+          <issuer-signing-keys>
+            <key>{{jwt-secret}}</key>
+          </issuer-signing-keys>
+          <audiences>
+            <audience>WrenchBox.Admin</audience>
+          </audiences>
+          <issuers>
+            <issuer>WrenchBox</issuer>
+          </issuers>
+          <required-claims>
+            <claim name="http://schemas.microsoft.com/ws/2008/06/identity/claims/role" match="all">
+              <value>Customer</value>
+            </claim>
+          </required-claims>
+        </validate-jwt>
+        <set-backend-service base-url="{{api-backend-${environment}}}" />
+      </when>
+      <otherwise>
+        <validate-jwt header-name="Authorization" require-scheme="Bearer" require-expiration-time="true">
+          <issuer-signing-keys>
+            <key>{{jwt-secret}}</key>
+          </issuer-signing-keys>
+          <audiences>
+            <audience>WrenchBox.Admin</audience>
+          </audiences>
+          <issuers>
+            <issuer>WrenchBox</issuer>
+          </issuers>
+          <required-claims>
+            <claim name="http://schemas.microsoft.com/ws/2008/06/identity/claims/role" match="all">
+              <value>Admin</value>
+            </claim>
+          </required-claims>
+        </validate-jwt>
+        <set-backend-service base-url="{{api-backend-${environment}}}" />
+      </otherwise>
+    </choose>
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>
