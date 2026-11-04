@@ -1,0 +1,108 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, homolog]
+  pull_request:
+    branches: [main, homolog]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Terraform validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate
+
+  plan:
+    name: Terraform plan
+    needs: validate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: Check Azure settings
+        id: azure
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+          TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+          KEY_VAULT_NAME: ${{ vars.KEY_VAULT_NAME }}
+        run: |
+          if [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_SUBSCRIPTION_ID" ] && [ -n "$TFSTATE_RESOURCE_GROUP" ] && [ -n "$TFSTATE_STORAGE_ACCOUNT" ] && [ -n "$KEY_VAULT_NAME" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Terraform na Azure ignorado. Cadastre os segredos AZURE_CLIENT_ID, AZURE_TENANT_ID e AZURE_SUBSCRIPTION_ID e as variáveis TFSTATE_RESOURCE_GROUP, TFSTATE_STORAGE_ACCOUNT e KEY_VAULT_NAME."
+          fi
+      - uses: azure/login@v2
+        if: steps.azure.outputs.enabled == 'true'
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - if: steps.azure.outputs.enabled == 'true'
+        run: terraform init -input=false -backend-config=resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }} -backend-config=storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }} -backend-config=container_name=tfstate -backend-config=key=wrenchbox-k8s.tfstate
+      - if: steps.azure.outputs.enabled == 'true'
+        run: terraform plan -input=false -var "key_vault_name=${{ vars.KEY_VAULT_NAME }}"
+
+  apply:
+    name: Terraform apply
+    needs: validate
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/homolog')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment: ${{ github.ref_name == 'main' && 'production' || 'homolog' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: Check Azure settings
+        id: azure
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+          TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+          KEY_VAULT_NAME: ${{ vars.KEY_VAULT_NAME }}
+        run: |
+          if [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_SUBSCRIPTION_ID" ] && [ -n "$TFSTATE_RESOURCE_GROUP" ] && [ -n "$TFSTATE_STORAGE_ACCOUNT" ] && [ -n "$KEY_VAULT_NAME" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Terraform na Azure ignorado. Cadastre os segredos AZURE_CLIENT_ID, AZURE_TENANT_ID e AZURE_SUBSCRIPTION_ID e as variáveis TFSTATE_RESOURCE_GROUP, TFSTATE_STORAGE_ACCOUNT e KEY_VAULT_NAME."
+          fi
+      - uses: azure/login@v2
+        if: steps.azure.outputs.enabled == 'true'
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - if: steps.azure.outputs.enabled == 'true'
+        run: |
+          terraform init -input=false -backend-config=resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }} -backend-config=storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }} -backend-config=container_name=tfstate -backend-config=key=wrenchbox-k8s.tfstate
+          terraform apply -input=false -auto-approve \
+            -var "key_vault_name=${{ vars.KEY_VAULT_NAME }}" \
+            -var "function_backend_url_homolog=${{ vars.FUNCTION_BACKEND_URL_HOMOLOG }}" \
+            -var "function_backend_url_prod=${{ vars.FUNCTION_BACKEND_URL_PROD }}" \
+            -var "api_backend_url_homolog=${{ vars.API_BACKEND_URL_HOMOLOG }}" \
+            -var "api_backend_url_prod=${{ vars.API_BACKEND_URL_PROD }}" \
+            -var "alert_email=${{ vars.ALERT_EMAIL }}"
